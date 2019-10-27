@@ -1,0 +1,48 @@
+
+command-timeout: 9999
+no-response-timeout: 9999
+
+#
+# How to update
+#
+#  $ git clone git@github.com:mynd/mecab-ipadic-neologd
+#  $ cd mecab-ipadic-neologd
+#  $ git remote add upstream git@github.com:neologd/mecab-ipadic-neologd.git
+#  $ git pull upstream master
+#  $ git push
+#
+# CI (wercker) automatically update build deliverables at
+# s3://mynd-build/latest/mecab-ipadic-neologd/mecab-ipadic-neologd.tar.xz
+#
+build:
+   box:
+      id: ubuntu:18.04
+      env:
+         LANG: C.UTF-8
+         AWS_DEFAULT_REGION: ap-northeast-1
+         DEBIAN_FRONTEND: noninteractive
+   steps:
+    - install-packages:
+         packages: mecab libmecab-dev mecab-ipadic-utf8 git make curl xz-utils file patch ca-certificates awscli
+    - script:
+         name: build neologd
+         code: |
+            mkdir /tmp/d
+            ./bin/install-mecab-ipadic-neologd -p /tmp/d/mecab-ipadic-neologd -y
+    - script:
+         name: upload to S3
+         code: |
+            now=$(date +%s)
+            yy=$((199 - 1$(date +%y -d @$now)))
+            m=$(printf \\$(printf '%03o' $((177 - 1$(date +%m -d @$now)))))
+            dd=$((199 - 1$(date +%d -d @$now)))
+            rd=$yy$m$dd
+            ts=$(date +%Y-%m%d-%H%M -d @$now)
+            label='mecab-ipadic-neologd'
+            tar Jcvf - -C /tmp/d mecab-ipadic-neologd \
+              | aws s3 cp - s3://mynd-build/release/$rd-$ts-$label/$label.tar.xz
+            aws s3 cp s3://mynd-build/release/$rd-$ts-$label/$label.tar.xz \
+                      s3://mynd-build/latest/$label/$label.tar.xz
+            head -1 ChangeLog | aws s3 cp - s3://mynd-build/release/$rd-$ts-$label/RELEASE
+            aws s3 cp s3://mynd-build/release/$rd-$ts-$label/RELEASE s3://mynd-build/latest/$label/RELEASE
+
